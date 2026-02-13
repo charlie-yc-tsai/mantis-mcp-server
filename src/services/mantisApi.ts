@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config/index.js';
 import { log } from '../utils/logger.js';
 
@@ -125,19 +126,35 @@ export class MantisApi {
       throw new Error('未設置 Mantis API URL');
     }
 
-    this.api = axios.create({
+    // 設定代理配置
+    const axiosConfig: any = {
       baseURL: config.MANTIS_API_URL,
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
         ...(config.MANTIS_API_KEY && { 'Authorization': config.MANTIS_API_KEY }),
       },
-    });
+    };
+
+    // 如果有 HTTPS_PROXY 環境變數，設定代理
+    if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY) {
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      const proxyAgent = new HttpsProxyAgent(proxyUrl!, {
+        rejectUnauthorized: false, // 忽略 SSL 證書驗證
+      });
+      axiosConfig.httpsAgent = proxyAgent;
+      axiosConfig.httpAgent = proxyAgent;  // 同時設置 httpAgent
+      axiosConfig.proxy = false;  // 禁用 axios 內建的代理處理
+      log.info('使用 Proxy 連接', { proxy: proxyUrl });
+    }
+
+    this.api = axios.create(axiosConfig);
 
     log.info('已初始化 Mantis API 客戶端', {
       baseURL: config.MANTIS_API_URL,
       timeout: 10000,
-      hasApiKey: !!config.MANTIS_API_KEY
+      hasApiKey: !!config.MANTIS_API_KEY,
+      hasProxy: !!(process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
     });
 
     // 添加請求攔截器用於錯誤處理

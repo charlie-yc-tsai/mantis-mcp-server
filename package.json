@@ -29,6 +29,8 @@
     "@modelcontextprotocol/sdk": "^1.7.0",
     "axios": "^1.8.4",
     "dotenv": "^16.4.7",
+    "https-proxy-agent": "^7.0.6",
+    "mantis-mcp-server": "^0.4.8",
     "winston": "^3.17.0",
     "zod": "^3.24.2"
   },
