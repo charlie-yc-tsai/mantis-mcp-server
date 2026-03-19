@@ -119,20 +119,30 @@ export class MantisApi {
   }
   private api: AxiosInstance;
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private readonly _isConfigured: boolean;
 
-  constructor() {
-    if (!config.MANTIS_API_URL) {
+  isConfigured(): boolean {
+    return this._isConfigured;
+  }
+
+  constructor(options?: { apiUrl?: string; apiKey?: string }) {
+    const apiUrl = options?.apiUrl || config.MANTIS_API_URL;
+    const apiKey = options?.apiKey !== undefined ? options.apiKey : config.MANTIS_API_KEY;
+
+    this._isConfigured = !!apiKey;
+
+    if (!apiUrl) {
       log.error('未設置 Mantis API URL');
       throw new Error('未設置 Mantis API URL');
     }
 
     // 設定代理配置
     const axiosConfig: any = {
-      baseURL: config.MANTIS_API_URL,
+      baseURL: apiUrl,
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
-        ...(config.MANTIS_API_KEY && { 'Authorization': config.MANTIS_API_KEY }),
+        ...(apiKey && { 'Authorization': apiKey }),
       },
     };
 
@@ -151,9 +161,9 @@ export class MantisApi {
     this.api = axios.create(axiosConfig);
 
     log.info('已初始化 Mantis API 客戶端', {
-      baseURL: config.MANTIS_API_URL,
+      baseURL: apiUrl,
       timeout: 10000,
-      hasApiKey: !!config.MANTIS_API_KEY,
+      hasApiKey: !!apiKey,
       hasProxy: !!(process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
     });
 

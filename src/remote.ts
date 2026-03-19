@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
-import { config, isMantisConfigured } from "./config/index.js";
+import { config } from "./config/index.js";
 import { createServer } from "./server.js";
+import { MantisApi } from "./services/mantisApi.js";
 import { log } from "./utils/logger.js";
 
 const PORT = config.PORT;
@@ -10,16 +11,11 @@ const AUTH_TOKEN = config.SERVER_AUTH_TOKEN;
 
 // 輸出環境配置
 log.info("=== Mantis MCP Server (Remote HTTP) 配置資訊 ===", {
-  api_url: config.MANTIS_API_URL,
-  api_configured: isMantisConfigured(),
   environment: config.NODE_ENV,
   port: PORT,
   auth_enabled: !!AUTH_TOKEN,
+  mode: "credentials-from-client-headers",
 });
-
-if (!isMantisConfigured()) {
-  log.warn("Mantis API 未完整配置，部分功能可能無法使用");
-}
 
 if (!AUTH_TOKEN) {
   log.warn("SERVER_AUTH_TOKEN 未設定，MCP 端點未受保護！建議設定以防止未授權存取。");
@@ -41,8 +37,26 @@ if (AUTH_TOKEN) {
 }
 
 // MCP endpoint（無狀態模式：每個 request 建立獨立 transport）
+// 用戶端透過 X-Mantis-Api-Url 和 X-Mantis-Api-Key header 提供憑證
 app.post("/mcp", async (req, res) => {
-  const mcpServer = createServer();
+  // 從 request headers 讀取 Mantis 憑證
+  const apiUrl = req.headers["x-mantis-api-url"] as string | undefined;
+  const apiKey = req.headers["x-mantis-api-key"] as string | undefined;
+
+  if (!apiUrl || !apiKey) {
+    res.status(400).json({
+      jsonrpc: "2.0",
+      error: {
+        code: -32600,
+        message: "缺少必要的 Header：X-Mantis-Api-Url 和 X-Mantis-Api-Key",
+      },
+      id: null,
+    });
+    return;
+  }
+
+  const api = new MantisApi({ apiUrl, apiKey });
+  const mcpServer = createServer(api);
   try {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // 無狀態模式
@@ -70,7 +84,7 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     version: process.env.npm_package_version,
-    mantis_configured: isMantisConfigured(),
+    mode: "credentials-from-client-headers",
   });
 });
 

@@ -1,7 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { isMantisConfigured } from "./config/index.js";
-import mantisApi, { MantisApiError, User } from "./services/mantisApi.js";
+import mantisApi, { MantisApi, MantisApiError, User } from "./services/mantisApi.js";
 import { log } from "./utils/logger.js";
 import { gzip } from 'zlib';
 import { promisify } from 'util';
@@ -18,88 +17,6 @@ interface LogData {
   error?: any;
 }
 
-// 高階函數：檢查 Mantis 配置並執行工具邏輯
-async function withMantisConfigured<T>(
-  toolName: string,
-  action: () => Promise<T>
-): Promise<{
-  [x: string]: unknown;
-  content: Array<{
-    [x: string]: unknown;
-    type: "text";
-    text: string;
-  }>;
-  _meta?: { [key: string]: unknown } | undefined;
-  isError?: boolean | undefined;
-}> {
-  try {
-    // 檢查是否已配置 Mantis API
-    if (!isMantisConfigured()) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                error: "Mantis API 尚未配置",
-                message: "請在環境變數中設定 MANTIS_API_URL 和 MANTIS_API_KEY"
-              },
-              null,
-              2
-            ),
-          },
-        ],
-        isError: true
-      };
-    }
-
-    // 執行工具邏輯
-    const result = await action();
-    return {
-      content: [
-        {
-          type: "text",
-          text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
-        },
-      ],
-    };
-  } catch (error) {
-    // 處理錯誤情況
-    let errorMessage = `執行 ${toolName} 時發生錯誤`;
-    let logData: LogData = { tool: toolName };
-
-    if (error instanceof MantisApiError) {
-      errorMessage = `Mantis API 錯誤: ${error.message}`;
-      if (error.statusCode) {
-        errorMessage += ` (HTTP ${error.statusCode})`;
-        logData = { ...logData, statusCode: error.statusCode };
-      }
-      log.error(errorMessage, { ...logData, error: error.message });
-    } else if (error instanceof Error) {
-      errorMessage = error.message;
-      log.error(errorMessage, { ...logData, error: error.stack });
-    } else {
-      log.error(errorMessage, { ...logData, error });
-    }
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              error: errorMessage,
-            },
-            null,
-            2
-          ),
-        },
-      ],
-      isError: true
-    };
-  }
-}
-
 // 壓縮 JSON 數據
 async function compressJsonData(data: any): Promise<string> {
   const jsonString = JSON.stringify(data);
@@ -111,7 +28,91 @@ async function compressJsonData(data: any): Promise<string> {
   return compressed.toString('base64');
 }
 
-export function createServer(): McpServer {
+export function createServer(api?: MantisApi): McpServer {
+  const resolvedApi = api ?? mantisApi;
+
+  // 高階函數：檢查 Mantis 配置並執行工具邏輯
+  async function withMantisConfigured<T>(
+    toolName: string,
+    action: () => Promise<T>
+  ): Promise<{
+    [x: string]: unknown;
+    content: Array<{
+      [x: string]: unknown;
+      type: "text";
+      text: string;
+    }>;
+    _meta?: { [key: string]: unknown } | undefined;
+    isError?: boolean | undefined;
+  }> {
+    try {
+      // 檢查是否已配置 Mantis API
+      if (!resolvedApi.isConfigured()) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: "Mantis API 尚未配置",
+                  message: "請透過請求 Header 提供 X-Mantis-Api-Url 和 X-Mantis-Api-Key"
+                },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true
+        };
+      }
+
+      // 執行工具邏輯
+      const result = await action();
+      return {
+        content: [
+          {
+            type: "text",
+            text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      // 處理錯誤情況
+      let errorMessage = `執行 ${toolName} 時發生錯誤`;
+      let logData: LogData = { tool: toolName };
+
+      if (error instanceof MantisApiError) {
+        errorMessage = `Mantis API 錯誤: ${error.message}`;
+        if (error.statusCode) {
+          errorMessage += ` (HTTP ${error.statusCode})`;
+          logData = { ...logData, statusCode: error.statusCode };
+        }
+        log.error(errorMessage, { ...logData, error: error.message });
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+        log.error(errorMessage, { ...logData, error: error.stack });
+      } else {
+        log.error(errorMessage, { ...logData, error });
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true
+      };
+    }
+  }
+
   const server = new McpServer({
     name: "Mantis MCP Server",
     version: "0.1.0",
@@ -133,7 +134,7 @@ export function createServer(): McpServer {
     },
     async (params) => {
       return withMantisConfigured("get_issues", async () => {
-        const issues = await mantisApi.getIssues(params);
+        const issues = await resolvedApi.getIssues(params);
         const jsonString = JSON.stringify(issues);
         
         if (jsonString.length < COMPRESSION_THRESHOLD) {
@@ -162,7 +163,7 @@ export function createServer(): McpServer {
     },
     async ({ issueId }) => {
       return withMantisConfigured("get_issue_by_id", async () => {
-        const issue = await mantisApi.getIssueById(issueId);
+        const issue = await resolvedApi.getIssueById(issueId);
         return JSON.stringify(issue, null, 2);
       });
     }
@@ -177,7 +178,7 @@ export function createServer(): McpServer {
     },
     async (params) => {
       return withMantisConfigured("get_user", async () => {
-        const user = await mantisApi.getUserByUsername(params.username);
+        const user = await resolvedApi.getUserByUsername(params.username);
         return JSON.stringify(user, null, 2);
       });
     }
@@ -190,7 +191,7 @@ export function createServer(): McpServer {
     {},
     async () => {
       return withMantisConfigured("get_projects", async () => {
-        const projects = await mantisApi.getProjects();
+        const projects = await resolvedApi.getProjects();
         return JSON.stringify(projects, null, 2);
       });
     }
@@ -208,7 +209,7 @@ export function createServer(): McpServer {
     async (params) => {
       return withMantisConfigured("get_issue_statistics", async () => {
         // 從 Mantis API 獲取問題並處理統計
-        const issues = await mantisApi.getIssues({
+        const issues = await resolvedApi.getIssues({
           projectId: params.projectId,
           pageSize: 1000 // 獲取大量數據用於統計
         });
@@ -301,7 +302,7 @@ export function createServer(): McpServer {
     async (params) => {
       return withMantisConfigured("get_assignment_statistics", async () => {
         // 獲取問題
-        const issues = await mantisApi.getIssues({
+        const issues = await resolvedApi.getIssues({
           projectId: params.projectId,
           pageSize: 1000 // 獲取大量數據用於統計
         });
@@ -335,7 +336,7 @@ export function createServer(): McpServer {
 
         // 查詢每個處理人的詳細資訊並初始化統計
         for (const handlerId of handlerIds) {
-          const user = await mantisApi.getUser(handlerId);
+          const user = await resolvedApi.getUser(handlerId);
           userMap.set(user.id, {
             id: user.id,
             name: user.name,
@@ -409,7 +410,7 @@ export function createServer(): McpServer {
     },
     async (params) => {
       return withMantisConfigured("get_users_by_project_id", async () => {
-        const users = await mantisApi.getUsersByProjectId(params.projectId);
+        const users = await resolvedApi.getUsersByProjectId(params.projectId);
         return JSON.stringify(users, null, 2);
       });
     }
@@ -427,7 +428,7 @@ export function createServer(): McpServer {
         let users: User[] = [];
         do {
           try {
-            const user = await mantisApi.getUser(id);
+            const user = await resolvedApi.getUser(id);
             users.push(user);
             id++;
             notFoundCount = 0; // 重置計數器
@@ -469,7 +470,7 @@ export function createServer(): McpServer {
           severity: params.severity ? { name: params.severity } : undefined,
           additional_information: params.additional_information,
         };
-        const issue = await mantisApi.createIssue(issueData);
+        const issue = await resolvedApi.createIssue(issueData);
         return JSON.stringify(issue, null, 2);
       });
     }
@@ -500,7 +501,7 @@ export function createServer(): McpServer {
           priority: params.priority ? { name: params.priority } : undefined,
           severity: params.severity ? { name: params.severity } : undefined,
         };
-        const issue = await mantisApi.updateIssue(params.issueId, updateData);
+        const issue = await resolvedApi.updateIssue(params.issueId, updateData);
         return JSON.stringify(issue, null, 2);
       });
     }
@@ -521,7 +522,7 @@ export function createServer(): McpServer {
           text: params.text,
           view_state: { name: params.view_state },
         };
-        const result = await mantisApi.addIssueNote(params.issueId, noteData);
+        const result = await resolvedApi.addIssueNote(params.issueId, noteData);
         return JSON.stringify(result, null, 2);
       });
     }
