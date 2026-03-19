@@ -30,7 +30,9 @@ COPY --from=builder /app/dist ./dist
 # Drop build tools caches
 RUN rm -rf /root/.npm
 
-# Expose default ports if needed (MCP over stdio, no port)
+# Expose HTTP port for remote MCP mode (controlled by PORT env var, default 3000)
+EXPOSE 3000
 
 # Default command
-ENTRYPOINT ["node", "dist/index.js"]
+# Set MCP_MODE=http to run as remote HTTP server; default is stdio
+CMD ["sh", "-c", "if [ \"$MCP_MODE\" = \"http\" ]; then node dist/remote.js; else node dist/index.js; fi"]

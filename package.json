@@ -3,12 +3,14 @@
   "version": "0.4.8",
   "type": "module",
   "bin": {
-    "mantis-mcp-server": "dist/index.js"
+    "mantis-mcp-server": "dist/index.js",
+    "mantis-mcp-server-http": "dist/remote.js"
   },
   "scripts": {
-    "build": "tsc && shx chmod +x dist/index.js",
+    "build": "tsc && shx chmod +x dist/index.js dist/remote.js",
     "watch": "tsc --watch",
-    "start": "node ./dist/index.js"
+    "start": "node ./dist/index.js",
+    "start:http": "node ./dist/remote.js"
   },
   "files": [
     "dist",
@@ -29,12 +31,14 @@
     "@modelcontextprotocol/sdk": "^1.7.0",
     "axios": "^1.8.4",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "https-proxy-agent": "^7.0.6",
     "mantis-mcp-server": "^0.4.8",
     "winston": "^3.17.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.13.10",
     "shx": "^0.3.4",
     "typescript": "^5.8.2"

@@ -26,6 +26,10 @@ const ConfigSchema = z.object({
   // 日誌配置
   LOG_DIR: z.string().default(path.join(__dirname, '../../logs')),
   ENABLE_FILE_LOGGING: z.coerce.boolean().default(false),
+
+  // Remote HTTP 配置
+  PORT: z.coerce.number().default(3000),
+  SERVER_AUTH_TOKEN: z.string().optional(),
 });
 
 // 嘗試載入.env文件,但不強制要求
@@ -49,6 +53,8 @@ const parseConfig = () => {
       CACHE_TTL_SECONDS: process.env.CACHE_TTL_SECONDS,
       LOG_DIR: process.env.LOG_DIR,
       ENABLE_FILE_LOGGING: process.env.ENABLE_FILE_LOGGING,
+      PORT: process.env.PORT,
+      SERVER_AUTH_TOKEN: process.env.SERVER_AUTH_TOKEN,
     });
 
     // 如果啟用檔案日誌,確保日誌目錄存在
